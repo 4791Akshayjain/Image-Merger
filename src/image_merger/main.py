@@ -11,11 +11,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command")
 
-    m = sub.add_parser("merge", help="Image A + Image B + carrier -> merged PNG")
+    m = sub.add_parser("merge", help="One or two images + carrier -> merged PNG")
     m.add_argument("--image-a", required=True)
     m.add_argument("--code-a", required=True, help="3-20 digits")
-    m.add_argument("--image-b", required=True)
-    m.add_argument("--code-b", required=True, help="3-20 digits, different from code A")
+    m.add_argument("--image-b", help="Optional second image")
+    m.add_argument("--code-b", help="3-20 digits, different from code A; required with --image-b")
     m.add_argument("--carrier", required=True, help="Image that is visible in the merged PNG")
     m.add_argument("--output", required=True, help="Path of the merged .png to write")
 

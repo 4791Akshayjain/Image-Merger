@@ -80,9 +80,11 @@ def carrier_to_png_bytes(path: str) -> bytes:
 # Merge
 # --------------------------------------------------------------------------
 
-def validate_merge_codes(code_a: str, code_b: str) -> Tuple[int, int]:
-    """Parse both codes and make sure they are different."""
+def validate_merge_codes(code_a: str, code_b: Optional[str] = None) -> Tuple[int, ...]:
+    """Parse the required first code and optional second code."""
     a = parse_code(code_a)
+    if not code_b:
+        return (a,)
     b = parse_code(code_b)
     if a == b:
         raise CodeError(
@@ -121,12 +123,17 @@ def _atomic_write(path: str, data: bytes) -> None:
         raise
 
 
-def create_merged_png(image_a: str, code_a: str, image_b: str, code_b: str,
+def create_merged_png(image_a: str, code_a: str, image_b: Optional[str], code_b: Optional[str],
                       carrier: str, output_path: str) -> str:
-  
-    a, b = validate_merge_codes(code_a, code_b)
+    codes = validate_merge_codes(code_a, code_b)
+    if bool(image_b) != bool(code_b):
+        raise ImageMergerError(
+            "To add Image B, choose both the image and its code. Otherwise leave both empty."
+        )
 
-    entries = [_prepare_entry(image_a, a), _prepare_entry(image_b, b)]
+    entries = [_prepare_entry(image_a, codes[0])]
+    if image_b:
+        entries.append(_prepare_entry(image_b, codes[1]))
     carrier_png = carrier_to_png_bytes(carrier)
 
     blob = fmt.pack(fmt.Container(entries=entries))

@@ -108,11 +108,11 @@ class ImageMergerApp:
         self.code_a = self._make_code_entry(
             f, f"Code for Image A ({MIN_CODE_DIGITS}-{MAX_CODE_DIGITS} digits):")
 
-        self.zone_b = DropZone(f, "Image B\n(drop here or click to browse)",
+        self.zone_b = DropZone(f, "Image B (optional)\n(drop here or click to browse)",
                                IMAGE_TYPES, "Select Image B")
         self.zone_b.pack(pady=(6, 4))
         self.code_b = self._make_code_entry(
-            f, f"Code for Image B ({MIN_CODE_DIGITS}-{MAX_CODE_DIGITS} digits, different):")
+            f, f"Code for Image B (optional; {MIN_CODE_DIGITS}-{MAX_CODE_DIGITS} digits, different):")
 
         row = tk.Frame(f)
         row.pack(fill="x", pady=6)
@@ -243,22 +243,29 @@ class ImageMergerApp:
 
     def _on_merge(self):
         a, b, carrier = self.zone_a.path, self.zone_b.path, self.zone_carrier.path
-        if not (a and b and carrier):
+        if not (a and carrier):
             messagebox.showwarning("Missing files",
-                                   "Please choose Image A, Image B and a carrier image.")
+                                   "Please choose Image A and a carrier image.")
             return
 
         code_a, code_b = self.code_a.get(), self.code_b.get()
+        if bool(b) != bool(code_b):
+            messagebox.showwarning(
+                "Image B is incomplete",
+                "To add Image B, choose both the image and its code. "
+                "Otherwise leave both empty.")
+            return
         try:
             validate_merge_codes(code_a, code_b)
         except ImageMergerError as e:
             messagebox.showwarning("Check the codes", str(e))
             return
 
+        image_b_line = f"Image B:  {os.path.basename(b)}\n" if b else ""
         confirmed = messagebox.askyesno(
             "Confirm inputs",
             f"Image A:  {os.path.basename(a)}\n"
-            f"Image B:  {os.path.basename(b)}\n"
+            f"{image_b_line}"
             f"Carrier:  {os.path.basename(carrier)}\n\n"
             "The carrier is the picture everyone will see. Create the merged PNG?")
         if not confirmed:
@@ -272,7 +279,8 @@ class ImageMergerApp:
             return
 
         norm = lambda p: os.path.normcase(os.path.abspath(p))
-        if norm(out_path) in {norm(a), norm(b), norm(carrier)}:
+        input_paths = {norm(path) for path in (a, b, carrier) if path}
+        if norm(out_path) in input_paths:
             messagebox.showerror("Choose another name",
                                  "Don't overwrite one of the input files. Pick a new file name.")
             return

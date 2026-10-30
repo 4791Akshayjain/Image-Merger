@@ -9,7 +9,8 @@ MAGIC = b"IMRG"
 FORMAT_VERSION = 1
 SHUFFLE_ALGORITHM = 1          # numpy RandomState permutation, see shuffle.py
 CHUNK_TYPE = b"imMg"           # ancillary, private, safe-to-copy PNG chunk
-ENTRY_COUNT = 2
+MIN_ENTRY_COUNT = 1
+MAX_ENTRY_COUNT = 2
 
 MODE_RGB = 1
 MODE_RGBA = 2
@@ -96,8 +97,10 @@ def _validate_geometry(width: int, height: int, mode: int, data_len: int) -> Non
 # --------------------------------------------------------------------------
 
 def pack(container: Container) -> bytes:
-    if len(container.entries) != ENTRY_COUNT:
-        raise FormatError(f"A merged file must hold exactly {ENTRY_COUNT} images.")
+    if not MIN_ENTRY_COUNT <= len(container.entries) <= MAX_ENTRY_COUNT:
+        raise FormatError(
+            f"A merged file must hold {MIN_ENTRY_COUNT} or {MAX_ENTRY_COUNT} images."
+        )
 
     parts = [_HEADER.pack(
         MAGIC, FORMAT_VERSION, container.shuffle_algorithm,
@@ -124,7 +127,7 @@ def unpack(blob: bytes) -> Container:
             f"This file uses format version {version}, which this version of the "
             f"app can't read. Please update the app."
         )
-    if algo != SHUFFLE_ALGORITHM or count != ENTRY_COUNT:
+    if algo != SHUFFLE_ALGORITHM or not MIN_ENTRY_COUNT <= count <= MAX_ENTRY_COUNT:
         raise FormatError(_DAMAGED)
     if not 1 <= iterations <= MAX_KDF_ITERATIONS:
         raise FormatError(_DAMAGED)

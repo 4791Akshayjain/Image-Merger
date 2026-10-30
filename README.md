@@ -1,6 +1,6 @@
 # Image Merger
 
-Image Merger stores two images inside a PNG that displays a separate picture when opened normally. Each hidden image is scrambled using its own numeric code and can be recovered with the matching code.
+Image Merger stores one or two images inside a PNG that displays a separate picture when opened normally. Each hidden image is scrambled using its own numeric code and can be recovered with the matching code.
 
 ## Download the complete application
 
@@ -10,11 +10,11 @@ For the complete, ready-to-use application, download the latest Windows installe
 
 1. Open **Image Merger** and choose **Merge images**.
 2. Select **Image A** and enter a numeric code from 3 to 20 digits.
-3. Select **Image B** and enter a different numeric code.
+3. Optionally, select **Image B** and enter a different numeric code. Leave both Image B fields empty to merge only one hidden image.
 4. Select the **carrier image**. This is the visible picture in the merged PNG.
 5. Choose **Create merged PNG...** and select where to save the file.
 
-Keep a record of both codes. You will need the matching code to recover each image. The two codes must be different; leading zeros do not make a code different (for example, `007` and `7` count as the same code).
+Keep a record of each code you use. You will need the matching code to recover each image. If you add Image B, its code must be different from Image A's; leading zeros do not make a code different (for example, `007` and `7` count as the same code).
 
 The carrier and hidden images can be selected by clicking the boxes or dragging and dropping files onto them. The app accepts PNG, JPG/JPEG, BMP, GIF, WebP, and TIFF images as inputs. The merged result is always a PNG.
 
