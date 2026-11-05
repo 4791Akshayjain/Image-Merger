@@ -12,7 +12,6 @@ class CodeError(ImageMergerError):
 
 
 def parse_code(code: str, enforce_length: bool = True) -> int:
-
     code = (code or "").strip()
     if not code:
         raise CodeError("Please enter a numeric code.")
@@ -43,6 +42,10 @@ def permutation_for(length: int, code: int) -> np.ndarray:
     return rng.permutation(length)
 
 
+# --------------------------------------------------------------------------
+# Format v1: byte shuffle (kept so old merged files can still be read)
+# --------------------------------------------------------------------------
+
 def shuffle_bytes(data: bytes, code: int) -> bytes:
     """Reorder `data` according to the permutation derived from `code`."""
     arr = np.frombuffer(data, dtype=np.uint8)
@@ -60,3 +63,45 @@ def unshuffle_bytes(data: bytes, code: int) -> bytes:
     out = np.empty_like(arr)
     out[perm] = arr
     return out.tobytes()
+
+
+# --------------------------------------------------------------------------
+# Format v2: block shuffle (the result is still a normal, compressible image)
+# --------------------------------------------------------------------------
+
+def _to_blocks(pixels: np.ndarray, block: int) -> np.ndarray:
+    h, w, c = pixels.shape
+    if h % block or w % block:
+        raise ValueError("Image size must be a multiple of the block size.")
+    by, bx = h // block, w // block
+    return (pixels.reshape(by, block, bx, block, c)
+                  .swapaxes(1, 2)
+                  .reshape(by * bx, block, block, c))
+
+
+def _from_blocks(blocks: np.ndarray, h: int, w: int) -> np.ndarray:
+    n, block, _, c = blocks.shape
+    by, bx = h // block, w // block
+    return np.ascontiguousarray(
+        blocks.reshape(by, bx, block, block, c).swapaxes(1, 2).reshape(h, w, c))
+
+
+def shuffle_blocks(pixels: np.ndarray, block: int, code: int) -> np.ndarray:
+    """Permute the block x block tiles of an (H, W, C) uint8 array."""
+    h, w, _ = pixels.shape
+    blocks = _to_blocks(pixels, block)
+    perm = permutation_for(blocks.shape[0], code)
+    return _from_blocks(blocks[perm], h, w)
+
+
+def unshuffle_blocks(pixels: np.ndarray, block: int, code: int) -> np.ndarray:
+    """
+    Reverse shuffle_blocks(). The right code restores the original tiles;
+    any other code returns a scrambled but same-size image.
+    """
+    h, w, _ = pixels.shape
+    blocks = _to_blocks(pixels, block)
+    perm = permutation_for(blocks.shape[0], code)
+    out = np.empty_like(blocks)
+    out[perm] = blocks
+    return _from_blocks(out, h, w)

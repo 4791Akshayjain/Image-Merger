@@ -65,8 +65,6 @@ def find_chunk(png: bytes, chunk_type: bytes):
         data = png[data_start:data_end]
         stored = int.from_bytes(png[data_end:chunk_end], "big")
         if _crc(chunk_type, data) != stored:
-            raise ContainerError(
-
-            )
+            raise ContainerError("This PNG file is damaged (checksum mismatch).")
         return bytes(data)
     return None

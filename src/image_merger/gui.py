@@ -7,7 +7,8 @@ from PIL import ImageOps, Image, ImageTk
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
 from image_merger.format import ImageMergerError
-from image_merger.image_pipeline import create_merged_png, extract_image, validate_merge_codes
+from image_merger.image_pipeline import (DEFAULT_QUALITY, create_merged_png, estimate_fit,
+                                         extract_image, validate_merge_codes)
 from image_merger.shuffle import MAX_CODE_DIGITS, MIN_CODE_DIGITS
 
 IMAGE_TYPES = [("Image files", "*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tif *.tiff"),
@@ -15,7 +16,9 @@ IMAGE_TYPES = [("Image files", "*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tif *.ti
 PNG_TYPES = [("PNG image", "*.png"), ("All files", "*.*")]
 BG = "#f0f0f0"
 OK_COLOR = "#1a7a1a"
+WARN_COLOR = "#b9770e"
 ERR_COLOR = "#c0392b"
+LEVEL_COLORS = {"low": OK_COLOR, "medium": WARN_COLOR, "high": ERR_COLOR}
 
 
 class DropZone(tk.Frame):
@@ -61,10 +64,13 @@ class ImageMergerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Image Merger")
-        self.root.geometry("500x700")
+        self.root.geometry("500x790")
         self.root.resizable(False, False)
 
         self.mode = tk.StringVar(value="merge")
+        self.quality_var = tk.StringVar(value=str(DEFAULT_QUALITY))
+        self.autofit_var = tk.BooleanVar(value=True)
+        self.maxmp_var = tk.StringVar()
         self._vcmd = (self.root.register(self._validate_digits), "%P")
         self._photo_refs = {}      # keep PhotoImage objects alive
         self.result_image = None   # last extracted PIL image
@@ -128,9 +134,25 @@ class ImageMergerApp:
         self.carrier_preview = tk.Label(preview_box, text="Preview", bg="#fff", fg="#999")
         self.carrier_preview.pack(expand=True)
 
+        opts = tk.Frame(f)
+        opts.pack(fill="x", pady=(2, 0))
+        tk.Label(opts, text="Hidden quality (1-100, 100 = lossless):").pack(side="left")
+        tk.Spinbox(opts, from_=1, to=100, width=4, textvariable=self.quality_var).pack(side="left", padx=4)
+        tk.Checkbutton(opts, text="Auto-fit", variable=self.autofit_var).pack(side="left", padx=(6, 0))
+
+        opts2 = tk.Frame(f)
+        opts2.pack(fill="x")
+        tk.Label(opts2, text="Shrink carrier to at most (megapixels, optional):").pack(side="left")
+        tk.Entry(opts2, width=6, textvariable=self.maxmp_var).pack(side="left", padx=4)
+
+        self.check_btn = tk.Button(f, text="Check capacity", width=24, command=self._on_check_fit)
+        self.check_btn.pack(pady=(8, 2))
+        self.fit_label = tk.Label(f, text="", wraplength=440, justify="center")
+        self.fit_label.pack()
+
         self.merge_btn = tk.Button(f, text="Create merged PNG...", width=24, bg="#4a90d9",
                                    fg="white", activebackground="#3a78bd", command=self._on_merge)
-        self.merge_btn.pack(pady=12)
+        self.merge_btn.pack(pady=10)
         return f
 
     def _build_extract_frame(self, parent):
@@ -191,6 +213,7 @@ class ImageMergerApp:
     def _set_busy(self, busy, text=""):
         state = "disabled" if busy else "normal"
         self.merge_btn.config(state=state)
+        self.check_btn.config(state=state)
         self.extract_btn.config(state=state)
         if busy:
             self._set_status(text)
@@ -241,12 +264,68 @@ class ImageMergerApp:
             self._photo_refs.pop("carrier", None)
             self.carrier_preview.config(image="", text="No preview")
 
+    def _read_options(self):
+        """Return (quality, auto_fit, max_carrier_mp), or None after warning the user."""
+        try:
+            quality = int(self.quality_var.get())
+            if not 1 <= quality <= 100:
+                raise ValueError
+        except ValueError:
+            messagebox.showwarning("Quality", "Hidden quality must be a whole number from 1 to 100.")
+            return None
+        max_mp = None
+        text = self.maxmp_var.get().strip()
+        if text:
+            try:
+                max_mp = float(text)
+                if max_mp <= 0:
+                    raise ValueError
+            except ValueError:
+                messagebox.showwarning("Carrier size",
+                                       "The maximum carrier size must be a number above zero "
+                                       "(or leave it empty).")
+                return None
+        return quality, self.autofit_var.get(), max_mp
+
+    @staticmethod
+    def _describe_fit(report):
+        quality = "lossless" if report.quality >= 100 else f"quality {report.quality}"
+        text = (f"Carrier fill {report.fill:.0%} ({report.level} detection risk), hidden images at "
+                f"{quality}. This carrier holds about {report.capacity_bytes / 1024:.0f} KB "
+                f"comfortably.")
+        if report.level != "low":
+            text += " A larger carrier or lower quality makes the result harder to detect."
+        return text
+
+    def _on_check_fit(self):
+        a, b, carrier = self.zone_a.path, self.zone_b.path, self.zone_carrier.path
+        if not (a and carrier):
+            messagebox.showwarning("Missing files", "Please choose Image A and a carrier image.")
+            return
+        options = self._read_options()
+        if options is None:
+            return
+        quality, auto_fit, max_mp = options
+        self.fit_label.config(text="")
+
+        def done(report):
+            self.fit_label.config(text=self._describe_fit(report), fg=LEVEL_COLORS[report.level])
+            self._set_status("")
+
+        self._run_async(lambda: estimate_fit(a, b, carrier, quality, auto_fit, max_mp), done,
+                        "Checking capacity...")
+
     def _on_merge(self):
         a, b, carrier = self.zone_a.path, self.zone_b.path, self.zone_carrier.path
         if not (a and carrier):
             messagebox.showwarning("Missing files",
                                    "Please choose Image A and a carrier image.")
             return
+
+        options = self._read_options()
+        if options is None:
+            return
+        quality, auto_fit, max_mp = options
 
         code_a, code_b = self.code_a.get(), self.code_b.get()
         if bool(b) != bool(code_b):
@@ -285,12 +364,15 @@ class ImageMergerApp:
                                  "Don't overwrite one of the input files. Pick a new file name.")
             return
 
-        def done(path):
-            size_mb = os.path.getsize(path) / (1024 * 1024)
-            self._set_status(f"Saved: {path}  ({size_mb:.1f} MB)", OK_COLOR)
+        def done(report):
+            size_mb = report.size_bytes / (1024 * 1024)
+            self.fit_label.config(text=self._describe_fit(report), fg=LEVEL_COLORS[report.level])
+            self._set_status(f"Saved: {report.path}  ({size_mb:.1f} MB)", OK_COLOR)
 
-        self._run_async(lambda: create_merged_png(a, code_a, b, code_b, carrier, out_path),
-                        done, "Merging... this can take a few seconds for large images.")
+        self._run_async(
+            lambda: create_merged_png(a, code_a, b, code_b, carrier, out_path,
+                                      quality=quality, auto_fit=auto_fit, max_carrier_mp=max_mp),
+            done, "Merging... this can take a few seconds for large images.")
 
     # ------------------------------------------------------------------
     # Extract
@@ -317,11 +399,13 @@ class ImageMergerApp:
 
     def _show_extracted(self, result):
         # Deliberately ignore result.matched_index: wrong codes must look the same.
+        # A wrong code (or a PNG with no hidden image) gives a noise image, not an error.
         self.result_image = result.image
         photo = self._thumbnail(result.image, (430, 240), "result")
         self.result_preview.config(image=photo, text="")
         self.save_btn.config(state="normal")
-        self._set_status("Done. Click 'Save As PNG...' to keep the image.", OK_COLOR)
+        self._set_status("Done. If this looks like noise, the code is wrong or the file has no "
+                         "hidden image. Click 'Save As PNG...' to keep it.", OK_COLOR)
 
     def _on_save(self):
         if self.result_image is None:

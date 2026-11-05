@@ -1,0 +1,4 @@
+pillow
+numpy
+tkinterdnd2
+cryptography
